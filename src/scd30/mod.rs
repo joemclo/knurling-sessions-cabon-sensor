@@ -1,11 +1,5 @@
 use crc_all::Crc;
-use nrf52840_hal::{
-    pac::TIMER1,
-    prelude::*,
-    timer::OneShot,
-    twim::{Error, Instance, Twim},
-    Timer,
-};
+use embedded_hal::blocking::i2c::{Read, Write};
 
 pub struct SensorData {
     pub co2: f32,
@@ -13,22 +7,39 @@ pub struct SensorData {
     pub humidity: f32,
 }
 
-pub const DEFAULT_ADDRESS: u8 = 0x61;
-pub struct SCD30<T: Instance>(Twim<T>);
+const DEFAULT_ADDRESS: u8 = 0x61;
 
-impl<T> SCD30<T>
+enum Command {
+    StartContinuousMeasurement = 0x0010,
+    StopContinuousMeasurement = 0x0104,
+    MeasurementInterval = 0x4600,
+    GetDataReadyStatus = 0x0202,
+    ReadMeasurement = 0x0300,
+    ASC = 0x5306,
+    // FRC = 0x5204,
+    TemperatureOffset = 0x5403,
+    // AltitudeCompensation = 0x5102,
+    ReadFirmwareVersion = 0xd100,
+    SoftReset = 0xd304,
+}
+
+pub struct SCD30<T>(T);
+
+impl<T, E> SCD30<T>
 where
-    T: Instance,
+    T: Read<Error = E> + Write<Error = E>,
 {
-    pub fn init(i2c2: Twim<T>) -> Self {
+    pub fn init(i2c2: T) -> Self {
         SCD30(i2c2)
     }
 
-    pub fn get_firmware_version(&mut self) -> Result<[u8; 2], Error> {
-        let command: [u8; 2] = [0xd1, 0x00];
+    pub fn read_firmware_version(&mut self) -> Result<[u8; 2], E> {
         let mut rd_buffer = [0u8; 2];
 
-        self.0.write(DEFAULT_ADDRESS, &command)?;
+        self.0.write(
+            DEFAULT_ADDRESS,
+            &(Command::ReadFirmwareVersion as u16).to_be_bytes(),
+        )?;
         self.0.read(DEFAULT_ADDRESS, &mut rd_buffer)?;
 
         let major = u8::from_be(rd_buffer[0]);
@@ -37,10 +48,9 @@ where
         Ok([major, minor])
     }
 
-    pub fn soft_reset(&mut self) -> Result<(), Error> {
-        let command: [u8; 2] = [0xd3, 0x04];
-
-        self.0.write(DEFAULT_ADDRESS, &command)?;
+    pub fn soft_reset(&mut self) -> Result<(), E> {
+        self.0
+            .write(DEFAULT_ADDRESS, &(Command::SoftReset as u16).to_be_bytes())?;
 
         Ok(())
     }
@@ -51,12 +61,14 @@ where
         crc
     }
 
-    pub fn set_temperature_offset(&mut self, temperature_offset: u16) -> Result<(), Error> {
+    pub fn set_temperature_offset(&mut self, temperature_offset: u16) -> Result<(), E> {
         let temperature_offset_bytes: &[u8; 2] = &temperature_offset.to_be_bytes();
 
+        let command: [u8; 2] = (Command::TemperatureOffset as u16).to_be_bytes();
+
         let mut command: [u8; 5] = [
-            0x54,
-            0x03,
+            command[0],
+            command[1],
             temperature_offset_bytes[0],
             temperature_offset_bytes[1],
             0x00,
@@ -72,24 +84,28 @@ where
         Ok(())
     }
 
-    pub fn read_temperature_offset(&mut self) -> Result<u16, Error> {
-        let command: [u8; 2] = [0x54, 0x03];
+    pub fn read_temperature_offset(&mut self) -> Result<u16, E> {
         let mut rd_buffer = [0u8; 3];
 
-        self.0.write(DEFAULT_ADDRESS, &command)?;
+        self.0.write(
+            DEFAULT_ADDRESS,
+            &(Command::TemperatureOffset as u16).to_be_bytes(),
+        )?;
         self.0.read(DEFAULT_ADDRESS, &mut rd_buffer)?;
 
         Ok(u16::from_be_bytes([rd_buffer[0], rd_buffer[1]]))
     }
 
-    pub fn start_continuous_measurement(&mut self, pressure: &u16) -> Result<(), Error> {
+    pub fn start_continuous_measurement(&mut self, pressure: &u16) -> Result<(), E> {
         let argument_bytes = &pressure.to_be_bytes();
         let mut crc = self.get_crc();
         crc.update(argument_bytes);
 
+        let command = (Command::StartContinuousMeasurement as u16).to_be_bytes();
+
         let command: [u8; 5] = [
-            0x00,
-            0x10,
+            command[0],
+            command[1],
             argument_bytes[0],
             argument_bytes[1],
             crc.finish(),
@@ -100,23 +116,26 @@ where
         Ok(())
     }
 
-    pub fn stop_continuous_measurement(&mut self) -> Result<(), Error> {
-        let command: [u8; 2] = [0x01, 0x04];
-
-        self.0.write(DEFAULT_ADDRESS, &command)?;
+    pub fn stop_continuous_measurement(&mut self) -> Result<(), E> {
+        self.0.write(
+            DEFAULT_ADDRESS,
+            &(Command::StopContinuousMeasurement as u16).to_be_bytes(),
+        )?;
 
         Ok(())
     }
 
-    pub fn set_measurement_interval(&mut self, interval: u16) -> Result<(), Error> {
+    pub fn set_measurement_interval(&mut self, interval: u16) -> Result<(), E> {
         let argument_bytes = &interval.to_be_bytes();
 
         let mut crc = self.get_crc();
         crc.update(argument_bytes);
 
+        let command = (Command::MeasurementInterval as u16).to_be_bytes();
+
         let command: [u8; 5] = [
-            0x46,
-            0x00,
+            command[0],
+            command[1],
             argument_bytes[0],
             argument_bytes[1],
             crc.finish(),
@@ -127,32 +146,37 @@ where
         Ok(())
     }
 
-    pub fn get_measurement_interval(&mut self) -> Result<u16, Error> {
-        let command: [u8; 2] = [0x46, 0x00];
+    pub fn get_measurement_interval(&mut self) -> Result<u16, E> {
         let mut rd_buffer = [0u8; 3];
 
-        self.0.write(DEFAULT_ADDRESS, &command)?;
+        self.0.write(
+            DEFAULT_ADDRESS,
+            &(Command::MeasurementInterval as u16).to_be_bytes(),
+        )?;
         self.0.read(DEFAULT_ADDRESS, &mut rd_buffer)?;
 
         Ok(u16::from_be_bytes([rd_buffer[0], rd_buffer[1]]))
     }
 
-    pub fn data_ready(&mut self, timer: &mut Timer<TIMER1, OneShot>) -> Result<bool, Error> {
-        let command: [u8; 2] = [0x02, 0x02];
+    pub fn data_ready(&mut self) -> Result<bool, E> {
         let mut rd_buffer = [0u8; 3];
 
-        self.0.write(DEFAULT_ADDRESS, &command)?;
-        timer.delay_ms(10_u32);
+        self.0.write(
+            DEFAULT_ADDRESS,
+            &(Command::GetDataReadyStatus as u16).to_be_bytes(),
+        )?;
         self.0.read(DEFAULT_ADDRESS, &mut rd_buffer)?;
 
         Ok(u16::from_be_bytes([rd_buffer[0], rd_buffer[1]]) == 1)
     }
 
-    pub fn read_measurement(&mut self) -> Result<SensorData, Error> {
-        let command: [u8; 2] = [0x3, 0x00];
+    pub fn read_measurement(&mut self) -> Result<SensorData, E> {
         let mut rd_buffer = [0u8; 18];
 
-        self.0.write(DEFAULT_ADDRESS, &command)?;
+        self.0.write(
+            DEFAULT_ADDRESS,
+            &(Command::ReadMeasurement as u16).to_be_bytes(),
+        )?;
         self.0.read(DEFAULT_ADDRESS, &mut rd_buffer)?;
 
         let sensor_data = SensorData {
@@ -172,5 +196,32 @@ where
         };
 
         Ok(sensor_data)
+    }
+
+    pub fn activate_auto_self_calibration(&mut self) -> Result<bool, E> {
+        let argument_bytes: [u8; 2] = [0x00, 0x01];
+        let mut crc = self.get_crc();
+        crc.update(&argument_bytes);
+
+        let command = (Command::ASC as u16).to_be_bytes();
+
+        let command: [u8; 5] = [
+            command[0],
+            command[1],
+            argument_bytes[0],
+            argument_bytes[1],
+            crc.finish(),
+        ];
+
+        self.0.write(DEFAULT_ADDRESS, &command)?;
+
+        self.0
+            .write(DEFAULT_ADDRESS, &(Command::ASC as u16).to_be_bytes())?;
+
+        let mut rd_buffer = [0u8; 3];
+
+        self.0.read(DEFAULT_ADDRESS, &mut rd_buffer)?;
+
+        Ok(u16::from_be_bytes([rd_buffer[0], rd_buffer[1]]) == 1)
     }
 }
