@@ -2,15 +2,10 @@
 #![no_std]
 
 use carbon_sensor::{
-    self as _, alert, buzzer, dk_button, number_representations::Unit, rgb_led, scd30,
+    self as _, alert, buzzer, display_helper::draw_text, dk_button, number_representations::Unit,
+    rgb_led, scd30,
 };
-use embedded_graphics::{
-    pixelcolor::BinaryColor,
-    prelude::*,
-    prelude::{Point, Primitive},
-    primitives::{Circle, Triangle},
-    style::PrimitiveStyle,
-};
+
 use epd_waveshare::{epd4in2::*, prelude::*};
 // global logger + panicking-behavior + memory layout
 use nb::block;
@@ -58,7 +53,7 @@ fn main() -> ! {
 
     let mut epd4in2 = EPD4in2::new(&mut spi, cs, busy, dc, rst, &mut delay).unwrap();
 
-    let mut display = Display4in2::default();
+    let display = Display4in2::default();
 
     let led_channel_red = pins_0.p0_03.degrade();
     let led_channel_blue = pins_0.p0_04.degrade();
@@ -108,22 +103,7 @@ fn main() -> ! {
     one_shot_timer.delay_ms(500_u32);
     light.green();
 
-    Circle::new(Point::new(171, 110), 30)
-        .into_styled(PrimitiveStyle::with_fill(BinaryColor::On))
-        .draw(&mut display)
-        .unwrap();
-    Circle::new(Point::new(229, 110), 30)
-        .into_styled(PrimitiveStyle::with_fill(BinaryColor::On))
-        .draw(&mut display)
-        .unwrap();
-    Triangle::new(
-        Point::new(259, 120),
-        Point::new(141, 120),
-        Point::new(200, 200),
-    )
-    .into_styled(PrimitiveStyle::with_fill(BinaryColor::On))
-    .draw(&mut display)
-    .unwrap();
+    let display = draw_text(display);
 
     epd4in2.update_frame(&mut spi, &display.buffer()).unwrap();
     epd4in2

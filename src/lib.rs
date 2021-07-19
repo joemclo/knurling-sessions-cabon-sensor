@@ -29,9 +29,10 @@ pub fn exit() -> ! {
     }
 }
 
+pub mod alert;
+pub mod buzzer;
+pub mod display_helper;
 pub mod dk_button;
 pub mod number_representations;
 pub mod rgb_led;
 pub mod scd30;
-pub mod buzzer;
-pub mod alert;
