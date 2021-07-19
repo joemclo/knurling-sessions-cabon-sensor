@@ -2,7 +2,10 @@
 #![no_std]
 
 use carbon_sensor::{
-    self as _, alert, buzzer, display_helper::draw_text, dk_button, number_representations::Unit,
+    self as _, alert, buzzer,
+    display_helper::{clear_numbers, draw_numbers, draw_titles},
+    dk_button,
+    number_representations::Unit,
     rgb_led, scd30,
 };
 
@@ -17,6 +20,13 @@ use nrf52840_hal::{
     twim::{self, Twim},
     Temp, Timer,
 };
+
+const CO2_POSITION: (i32, i32) = (220, 90);
+const CO2_UNIT: &str = "ppm";
+const TEMP_POSITION: (i32, i32) = (220, 130);
+const TEMP_UNIT: &str = "°C";
+const HUMIDITY_POSITION: (i32, i32) = (220, 170);
+const HUMIDITY_UNIT: &str = "%";
 
 #[cortex_m_rt::entry]
 fn main() -> ! {
@@ -103,7 +113,7 @@ fn main() -> ! {
     one_shot_timer.delay_ms(500_u32);
     light.green();
 
-    let display = draw_text(display);
+    let mut display = draw_titles(display);
 
     epd4in2.update_frame(&mut spi, &display.buffer()).unwrap();
     epd4in2
@@ -113,7 +123,7 @@ fn main() -> ! {
     loop {
         periodic_timer.start(1000u32);
 
-        if (millis % 1000) == 0 {
+        if (millis % 5000) == 0 {
             defmt::info!("Tick (milliseconds): {=u64}", millis);
             temperature = temp.measure().to_num();
             let converted_temp = current_unit.convert_temperature(&temperature);
@@ -154,7 +164,24 @@ fn main() -> ! {
                     humidity
                 );
 
-                co2_alert.check_level(&co2, &mut buzzer, &mut light, &mut one_shot_timer);
+                if (millis % 30000) == 0 {
+                    display = clear_numbers(
+                        display,
+                        CO2_POSITION,
+                        (CO2_POSITION.0 + 150, HUMIDITY_POSITION.1 + 20),
+                    );
+
+                    display = draw_numbers(co2, CO2_UNIT, CO2_POSITION, display);
+                    display = draw_numbers(temp, TEMP_UNIT, TEMP_POSITION, display);
+                    display = draw_numbers(humidity, HUMIDITY_UNIT, HUMIDITY_POSITION, display);
+
+                    epd4in2.update_frame(&mut spi, &display.buffer()).unwrap();
+                    epd4in2
+                        .display_frame(&mut spi)
+                        .expect("display frame new graphics");
+
+                    co2_alert.check_level(&co2, &mut buzzer, &mut light, &mut one_shot_timer);
+                }
             } else {
                 defmt::info!("Sensor Data Not Ready.");
             }
