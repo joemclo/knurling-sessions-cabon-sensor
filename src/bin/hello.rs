@@ -32,7 +32,7 @@ fn main() -> ! {
 
     let mut buzzer = buzzer::Buzzer::init(pins.p0_28.degrade());
 
-    let mut co2_alert = alert::CO2alert::init(700_f32, 1000_f32);
+    let mut co2_alert = alert::CO2alert::init(500_f32, 700_f32, 1000_f32);
 
     let scl = pins.p0_30.degrade();
     let sda = pins.p0_31.degrade();
@@ -43,7 +43,7 @@ fn main() -> ! {
 
     one_shot_timer.delay_ms(100_u32); // delay to allow sensors to boot
 
-    let firmware_version = sensor.get_firmware_version().unwrap();
+    let firmware_version = sensor.read_firmware_version().unwrap();
 
     defmt::info!(
         "Firmware Version: {=u8}.{=u8}",
@@ -90,10 +90,10 @@ fn main() -> ! {
 
             defmt::info!("{=f32} {}", converted_temp, unit);
 
-            if sensor.data_ready(&mut one_shot_timer).unwrap() {
+            if sensor.data_ready().unwrap() {
                 defmt::info!("Sensor Data ready.");
-                light.blue();
                 one_shot_timer.delay_ms(50_u32);
+                light.blink(&mut one_shot_timer);
 
                 let measurement_interval = sensor.get_measurement_interval().unwrap();
 
@@ -142,7 +142,7 @@ fn main() -> ! {
             }
 
             if button_3.check_rising_edge() {
-                sensor.set_measurement_interval(10_u16).unwrap();
+                sensor.set_measurement_interval(2_u16).unwrap();
                 sensor.set_temperature_offset(0_u16).unwrap();
 
                 let air_pressure_london = 1012_u16;
@@ -166,6 +166,10 @@ fn main() -> ! {
             if button_4.check_rising_edge() {
                 sensor.soft_reset().unwrap();
                 defmt::info!("Sensor reset");
+                one_shot_timer.delay_ms(50_u32);
+                let auto_status = sensor.activate_auto_self_calibration().unwrap();
+                defmt::info!("Auto Calib Status, {}", auto_status);
+
                 light.blink(&mut one_shot_timer);
             }
         }
