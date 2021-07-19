@@ -4,12 +4,21 @@
 use carbon_sensor::{
     self as _, alert, buzzer, dk_button, number_representations::Unit, rgb_led, scd30,
 };
+use embedded_graphics::{
+    pixelcolor::BinaryColor,
+    prelude::*,
+    prelude::{Point, Primitive},
+    primitives::{Circle, Triangle},
+    style::PrimitiveStyle,
+};
+use epd_waveshare::{epd4in2::*, prelude::*};
 // global logger + panicking-behavior + memory layout
 use nb::block;
 use nrf52840_hal::{
     self as hal,
-    gpio::p0,
+    gpio::{p0, p1, Level},
     prelude::*,
+    spim::{self, Spim},
     twim::{self, Twim},
     Temp, Timer,
 };
@@ -19,23 +28,50 @@ fn main() -> ! {
     let board = hal::pac::Peripherals::take().unwrap();
     let mut periodic_timer = Timer::periodic(board.TIMER0);
     let mut one_shot_timer = Timer::one_shot(board.TIMER1);
+    let mut delay = Timer::new(board.TIMER3);
 
     let mut millis: u64 = 0;
 
-    let pins = p0::Parts::new(board.P0);
+    let pins_0 = p0::Parts::new(board.P0);
+    let pins_1 = p1::Parts::new(board.P1);
 
-    let led_channel_red = pins.p0_03.degrade();
-    let led_channel_blue = pins.p0_04.degrade();
-    let led_channel_green = pins.p0_29.degrade();
+    let din = pins_1.p1_01.into_push_pull_output(Level::Low).degrade();
+    let clk = pins_1.p1_02.into_push_pull_output(Level::Low).degrade();
+    let cs = pins_1.p1_03.into_push_pull_output(Level::Low);
+    let dc = pins_1.p1_04.into_push_pull_output(Level::Low);
+    let rst = pins_1.p1_05.into_push_pull_output(Level::Low);
+    let busy = pins_1.p1_06.into_floating_input();
+
+    let spi_pins = spim::Pins {
+        sck: clk,
+        miso: None,
+        mosi: Some(din),
+    };
+
+    let mut spi = Spim::new(
+        board.SPIM3,
+        spi_pins,
+        spim::Frequency::K500,
+        spim::MODE_0,
+        0,
+    );
+
+    let mut epd4in2 = EPD4in2::new(&mut spi, cs, busy, dc, rst, &mut delay).unwrap();
+
+    let mut display = Display4in2::default();
+
+    let led_channel_red = pins_0.p0_03.degrade();
+    let led_channel_blue = pins_0.p0_04.degrade();
+    let led_channel_green = pins_0.p0_28.degrade();
 
     let mut light = rgb_led::LEDColour::init(led_channel_red, led_channel_blue, led_channel_green);
 
-    let mut buzzer = buzzer::Buzzer::init(pins.p0_28.degrade());
+    let mut buzzer = buzzer::Buzzer::init(pins_0.p0_29.degrade());
 
     let mut co2_alert = alert::CO2alert::init(500_f32, 700_f32, 1000_f32);
 
-    let scl = pins.p0_30.degrade();
-    let sda = pins.p0_31.degrade();
+    let scl = pins_0.p0_30.degrade();
+    let sda = pins_0.p0_31.degrade();
     let twim_pins = twim::Pins { scl, sda };
     let i2c = Twim::new(board.TWIM0, twim_pins, twim::Frequency::K100);
 
@@ -54,10 +90,10 @@ fn main() -> ! {
     let temperature_offset = sensor.read_temperature_offset().unwrap();
     defmt::info!("Temperature offset : {=u16}", temperature_offset);
 
-    let mut button_1 = dk_button::Button::new(pins.p0_11.degrade());
-    let mut button_2 = dk_button::Button::new(pins.p0_12.degrade());
-    let mut button_3 = dk_button::Button::new(pins.p0_24.degrade());
-    let mut button_4 = dk_button::Button::new(pins.p0_25.degrade());
+    let mut button_1 = dk_button::Button::new(pins_0.p0_11.degrade());
+    let mut button_2 = dk_button::Button::new(pins_0.p0_12.degrade());
+    let mut button_3 = dk_button::Button::new(pins_0.p0_24.degrade());
+    let mut button_4 = dk_button::Button::new(pins_0.p0_25.degrade());
 
     let mut temp = Temp::new(board.TEMP);
 
@@ -71,6 +107,28 @@ fn main() -> ! {
     light.red();
     one_shot_timer.delay_ms(500_u32);
     light.green();
+
+    Circle::new(Point::new(171, 110), 30)
+        .into_styled(PrimitiveStyle::with_fill(BinaryColor::On))
+        .draw(&mut display)
+        .unwrap();
+    Circle::new(Point::new(229, 110), 30)
+        .into_styled(PrimitiveStyle::with_fill(BinaryColor::On))
+        .draw(&mut display)
+        .unwrap();
+    Triangle::new(
+        Point::new(259, 120),
+        Point::new(141, 120),
+        Point::new(200, 200),
+    )
+    .into_styled(PrimitiveStyle::with_fill(BinaryColor::On))
+    .draw(&mut display)
+    .unwrap();
+
+    epd4in2.update_frame(&mut spi, &display.buffer()).unwrap();
+    epd4in2
+        .display_frame(&mut spi)
+        .expect("display frame new graphics");
 
     loop {
         periodic_timer.start(1000u32);
