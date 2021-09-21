@@ -6,7 +6,7 @@ use carbon_sensor::{
     display_helper::{clear_numbers, draw_numbers, draw_titles},
     dk_button,
     number_representations::Unit,
-    rgb_led, scd30,
+    rgb_led, scd30, sps30,
 };
 
 use epd_waveshare::{epd4in2::*, prelude::*};
@@ -18,6 +18,7 @@ use nrf52840_hal::{
     prelude::*,
     spim::{self, Spim},
     twim::{self, Twim},
+    uarte::{self, Uarte},
     Temp, Timer,
 };
 
@@ -82,7 +83,28 @@ fn main() -> ! {
 
     let mut sensor = scd30::SCD30::init(i2c);
 
+    let txd = pins_0.p0_06.into_push_pull_output(Level::High).degrade();
+    let rxd = pins_0.p0_08.degrade();
+
+    let uarte_pins = uarte::Pins {
+        txd,
+        rxd,
+        cts: None,
+        rts: None,
+    };
+
+    let uarte = Uarte::new(
+        board.UARTE0,
+        uarte_pins,
+        uarte::Parity::EXCLUDED,
+        uarte::Baudrate::BAUD115200,
+    );
+
     one_shot_timer.delay_ms(100_u32); // delay to allow sensors to boot
+
+    let mut pm_sensor = sps30::SPS30::init(uarte);
+
+    pm_sensor.version().unwrap();
 
     let firmware_version = sensor.read_firmware_version().unwrap();
 
