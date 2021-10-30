@@ -6,7 +6,7 @@ use carbon_sensor::{
     display_helper::{clear_numbers, draw_numbers, draw_titles},
     dk_button,
     number_representations::Unit,
-    rgb_led, scd30,
+    rgb_led, scd30, sps30,
 };
 
 use epd_waveshare::{epd4in2::*, prelude::*};
@@ -80,9 +80,40 @@ fn main() -> ! {
     let twim_pins = twim::Pins { scl, sda };
     let i2c = Twim::new(board.TWIM0, twim_pins, twim::Frequency::K100);
 
-    let mut sensor = scd30::SCD30::init(i2c);
+    let mut pm_sensor = sps30::SPS30::init(i2c);
 
-    one_shot_timer.delay_ms(100_u32); // delay to allow sensors to boot
+    one_shot_timer.delay_ms(300_u32); // delay to allow sensors to boot
+
+    let firmware_version = pm_sensor.read_firmware_version().unwrap();
+
+    defmt::info!(
+        "Firmware Version: {=u8}.{=u8}",
+        firmware_version[0],
+        firmware_version[1]
+    );
+    defmt::info!(
+        "Product Type: {=[u8]:a}",
+        pm_sensor.read_product_type().unwrap()
+    );
+    defmt::info!(
+        "Serial Number: {=[u8]:a}",
+        pm_sensor.read_serial_number().unwrap()
+    );
+    pm_sensor.read_device_status().unwrap();
+
+    pm_sensor.start_measurement().unwrap();
+    one_shot_timer.delay_ms(6000_u32); // delay to allow sensors to boot
+
+    pm_sensor.read_device_status().unwrap();
+
+    let data_ready = pm_sensor.data_ready().unwrap();
+    defmt::info!("Data_ready {=?}", data_ready);
+
+    pm_sensor.read_measurement().unwrap();
+
+    let i2c = pm_sensor.free();
+
+    let mut sensor = scd30::SCD30::init(i2c);
 
     let firmware_version = sensor.read_firmware_version().unwrap();
 
