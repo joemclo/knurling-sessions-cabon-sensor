@@ -224,4 +224,15 @@ where
 
         Ok(u16::from_be_bytes([rd_buffer[0], rd_buffer[1]]) == 1)
     }
+
+    pub fn free(self) -> T {
+        self.0
+    }
+
+    pub fn alloc(&mut self, i2c2: T) -> () {
+        self.0 = i2c2;
+
+        ()
+    }
 }
+
