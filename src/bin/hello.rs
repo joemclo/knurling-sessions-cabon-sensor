@@ -3,7 +3,9 @@
 
 use carbon_sensor::{
     self as _, alert, buzzer,
-    display_helper::{clear_numbers, draw_numbers, draw_titles},
+    display_helper::{
+        clear_screen, draw_large, draw_medium, draw_numbers, draw_small, draw_time, draw_titles,
+    },
     dk_button,
     number_representations::Unit,
     rgb_led, scd30,
@@ -21,11 +23,15 @@ use nrf52840_hal::{
     Temp, Timer,
 };
 
-const CO2_POSITION: (i32, i32) = (220, 90);
+const TITLE_POSITION: (i32, i32) = (20, 30); // 20 90
+const CO2_POSITION: (i32, i32) = (220, 90); // 20 90
 const CO2_UNIT: &str = "ppm";
-const TEMP_POSITION: (i32, i32) = (220, 130);
+const TEMP_POSITION: (i32, i32) = (220, 130); // 20
 const TEMP_UNIT: &str = "°C";
-const HUMIDITY_POSITION: (i32, i32) = (220, 170);
+const HUMIDITY_POSITION: (i32, i32) = (220, 170); //20
+const COUNTER_POSITION: (i32, i32) = (90, 250); // 20
+const LAST_UPDATE_COUNTER_POSITION: (i32, i32) = (90, 270); // 20
+
 const HUMIDITY_UNIT: &str = "%";
 
 #[cortex_m_rt::entry]
@@ -120,6 +126,12 @@ fn main() -> ! {
         .display_frame(&mut spi)
         .expect("display frame new graphics");
 
+    let mut update_counter: i32 = 0;
+    let mut last_co2_update_counter: i32 = 0;
+    let mut co2: f32 = 0.0;
+    let mut sensor_temp: f32 = 0.0;
+    let mut humidity: f32 = 0.0;
+
     loop {
         periodic_timer.start(1000u32);
 
@@ -142,6 +154,7 @@ fn main() -> ! {
                 defmt::info!("Sensor Data ready.");
                 one_shot_timer.delay_ms(50_u32);
                 light.blink(&mut one_shot_timer);
+                last_co2_update_counter = update_counter;
 
                 let measurement_interval = sensor.get_measurement_interval().unwrap();
 
@@ -149,9 +162,9 @@ fn main() -> ! {
 
                 let result = sensor.read_measurement().unwrap();
 
-                let co2 = result.co2;
-                let temp = result.temperature;
-                let humidity = result.humidity;
+                co2 = result.co2;
+                sensor_temp = result.temperature;
+                humidity = result.humidity;
 
                 defmt::info!(
                     "
@@ -160,32 +173,39 @@ fn main() -> ! {
                 Humidity {=f32} %
                 ",
                     co2,
-                    temp,
+                    sensor_temp,
                     humidity
                 );
-
-                if (millis % 30000) == 0 {
-                    display = clear_numbers(
-                        display,
-                        CO2_POSITION,
-                        (CO2_POSITION.0 + 150, HUMIDITY_POSITION.1 + 20),
-                    );
-
-                    display = draw_numbers(co2, CO2_UNIT, CO2_POSITION, display);
-                    display = draw_numbers(temp, TEMP_UNIT, TEMP_POSITION, display);
-                    display = draw_numbers(humidity, HUMIDITY_UNIT, HUMIDITY_POSITION, display);
-
-                    epd4in2.update_frame(&mut spi, &display.buffer()).unwrap();
-                    epd4in2
-                        .display_frame(&mut spi)
-                        .expect("display frame new graphics");
-
-                    co2_alert.check_level(&co2, &mut buzzer, &mut light, &mut one_shot_timer);
-                }
             } else {
                 defmt::info!("Sensor Data Not Ready.");
             }
         };
+
+        if (millis % 30000) == 0 {
+            display = clear_screen(display);
+
+            display = draw_titles(display);
+
+            display = draw_large(display, "Air Quality", TITLE_POSITION);
+            display = draw_numbers(co2, CO2_UNIT, CO2_POSITION, display);
+            display = draw_numbers(sensor_temp, TEMP_UNIT, TEMP_POSITION, display);
+            display = draw_numbers(humidity, HUMIDITY_UNIT, HUMIDITY_POSITION, display);
+            display = draw_time(update_counter * 30, COUNTER_POSITION, display);
+            display = draw_time(
+                last_co2_update_counter * 30,
+                LAST_UPDATE_COUNTER_POSITION,
+                display,
+            );
+
+            epd4in2.update_frame(&mut spi, &display.buffer()).unwrap();
+            epd4in2
+                .display_frame(&mut spi)
+                .expect("display frame new graphics");
+
+            co2_alert.check_level(&co2, &mut buzzer, &mut light, &mut one_shot_timer);
+
+            update_counter += 1;
+        }
 
         if (millis % 5) == 0 {
             if button_1.check_rising_edge() {
