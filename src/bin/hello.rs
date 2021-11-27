@@ -210,7 +210,11 @@ fn main() -> ! {
             display = draw_medium(display, "Humidity:", HUMIDITY_POSITION.title());
 
             display = draw_small(display, "Counter:", COUNTER_POSITION.title());
-            display = draw_small(display, "Counter:", LAST_UPDATE_COUNTER_POSITION.title());
+            display = draw_small(
+                display,
+                "Last reading at:",
+                LAST_UPDATE_COUNTER_POSITION.title(),
+            );
 
             display = draw_numbers(co2, CO2_UNIT, CO2_POSITION.reading(), display);
 
@@ -258,7 +262,7 @@ fn main() -> ! {
             }
 
             if button_3.check_rising_edge() {
-                sensor.set_measurement_interval(2_u16).unwrap();
+                sensor.set_measurement_interval(4_u16).unwrap();
                 sensor.set_temperature_offset(0_u16).unwrap();
 
                 let air_pressure_london = 1012_u16;
