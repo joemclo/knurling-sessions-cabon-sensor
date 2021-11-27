@@ -37,19 +37,6 @@ fn draw_small_text(display: &mut Display4in2, text: &str, position: (i32, i32)) 
     draw_text(display, text, position, Font6x12);
 }
 
-pub fn draw_titles(mut display: Display4in2) -> Display4in2 {
-    draw_large_text(&mut display, "Air Quality", (20, 30));
-
-    draw_mid_text(&mut display, "Carbon Dioxide:", (20, 90));
-    draw_mid_text(&mut display, "Temperature:", (20, 130));
-    draw_mid_text(&mut display, "Humidity:", (20, 170));
-
-    draw_small_text(&mut display, "Counter:", (20, 250));
-    draw_small_text(&mut display, "Counter:", (20, 270));
-
-    display
-}
-
 pub fn draw_large(mut display: Display4in2, text: &str, position: (i32, i32)) -> Display4in2 {
     draw_large_text(&mut display, text, position);
 

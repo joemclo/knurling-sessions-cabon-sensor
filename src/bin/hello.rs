@@ -3,9 +3,7 @@
 
 use carbon_sensor::{
     self as _, alert, buzzer,
-    display_helper::{
-        clear_screen, draw_large, draw_medium, draw_numbers, draw_small, draw_time, draw_titles,
-    },
+    display_helper::{clear_screen, draw_large, draw_medium, draw_numbers, draw_small, draw_time},
     dk_button,
     number_representations::Unit,
     rgb_led, scd30,
@@ -23,14 +21,37 @@ use nrf52840_hal::{
     Temp, Timer,
 };
 
-const TITLE_POSITION: (i32, i32) = (20, 30); // 20 90
-const CO2_POSITION: (i32, i32) = (220, 90); // 20 90
 const CO2_UNIT: &str = "ppm";
-const TEMP_POSITION: (i32, i32) = (220, 130); // 20
 const TEMP_UNIT: &str = "°C";
-const HUMIDITY_POSITION: (i32, i32) = (220, 170); //20
-const COUNTER_POSITION: (i32, i32) = (90, 250); // 20
-const LAST_UPDATE_COUNTER_POSITION: (i32, i32) = (90, 270); // 20
+
+struct DisplayPosition {
+    position: (i32, i32),
+}
+
+impl DisplayPosition {
+    fn reading(&self) -> (i32, i32) {
+        (self.position.0 + 200, self.position.1)
+    }
+
+    fn title(&self) -> (i32, i32) {
+        self.position
+    }
+}
+
+const TITLE_POSITION: DisplayPosition = DisplayPosition { position: (20, 30) };
+const CO2_POSITION: DisplayPosition = DisplayPosition { position: (20, 90) };
+const TEMP_POSITION: DisplayPosition = DisplayPosition {
+    position: (20, 130),
+};
+const HUMIDITY_POSITION: DisplayPosition = DisplayPosition {
+    position: (20, 170),
+};
+const COUNTER_POSITION: DisplayPosition = DisplayPosition {
+    position: (20, 250),
+};
+const LAST_UPDATE_COUNTER_POSITION: DisplayPosition = DisplayPosition {
+    position: (20, 270),
+};
 
 const HUMIDITY_UNIT: &str = "%";
 
@@ -69,7 +90,7 @@ fn main() -> ! {
 
     let mut epd4in2 = EPD4in2::new(&mut spi, cs, busy, dc, rst, &mut delay).unwrap();
 
-    let display = Display4in2::default();
+    let mut display = Display4in2::default();
 
     let led_channel_red = pins_0.p0_03.degrade();
     let led_channel_blue = pins_0.p0_04.degrade();
@@ -118,8 +139,6 @@ fn main() -> ! {
     light.red();
     one_shot_timer.delay_ms(500_u32);
     light.green();
-
-    let mut display = draw_titles(display);
 
     epd4in2.update_frame(&mut spi, &display.buffer()).unwrap();
     epd4in2
@@ -184,16 +203,28 @@ fn main() -> ! {
         if (millis % 30000) == 0 {
             display = clear_screen(display);
 
-            display = draw_titles(display);
+            display = draw_large(display, "Air Quality", TITLE_POSITION.title());
 
-            display = draw_large(display, "Air Quality", TITLE_POSITION);
-            display = draw_numbers(co2, CO2_UNIT, CO2_POSITION, display);
-            display = draw_numbers(sensor_temp, TEMP_UNIT, TEMP_POSITION, display);
-            display = draw_numbers(humidity, HUMIDITY_UNIT, HUMIDITY_POSITION, display);
-            display = draw_time(update_counter * 30, COUNTER_POSITION, display);
+            display = draw_medium(display, "Carbon Dioxide:", CO2_POSITION.title());
+            display = draw_medium(display, "Temperature:", TEMP_POSITION.title());
+            display = draw_medium(display, "Humidity:", HUMIDITY_POSITION.title());
+
+            display = draw_small(display, "Counter:", COUNTER_POSITION.title());
+            display = draw_small(display, "Counter:", LAST_UPDATE_COUNTER_POSITION.title());
+
+            display = draw_numbers(co2, CO2_UNIT, CO2_POSITION.reading(), display);
+
+            display = draw_numbers(sensor_temp, TEMP_UNIT, TEMP_POSITION.reading(), display);
+            display = draw_numbers(
+                humidity,
+                HUMIDITY_UNIT,
+                HUMIDITY_POSITION.reading(),
+                display,
+            );
+            display = draw_time(update_counter * 30, COUNTER_POSITION.reading(), display);
             display = draw_time(
                 last_co2_update_counter * 30,
-                LAST_UPDATE_COUNTER_POSITION,
+                LAST_UPDATE_COUNTER_POSITION.reading(),
                 display,
             );
 
