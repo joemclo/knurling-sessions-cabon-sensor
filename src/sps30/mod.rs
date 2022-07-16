@@ -1,5 +1,6 @@
 use crc_all::Crc;
 use embedded_hal::blocking::i2c::{Read, Write};
+use ieee754::Ieee754;
 
 const DEFAULT_ADDRESS: u8 = 0x69;
 
@@ -24,7 +25,6 @@ fn calculate_new_index(index: usize) -> usize {
 }
 
 fn get_bit_at(input: u32, n: u8) -> bool {
-
     if n < 32 {
         input & (1 << n) != 0
     } else {
@@ -33,12 +33,14 @@ fn get_bit_at(input: u32, n: u8) -> bool {
 }
 
 fn get_device_status(input: u32, n: u8) -> &'static str {
-
-    if get_bit_at(input, n) == false { "ok"} else {"error"}
+    if get_bit_at(input, n) == false {
+        "ok"
+    } else {
+        "error"
+    }
 }
 
 fn remove_crc_bits(buffer: &[u8]) -> [u8; 60] {
-
     let mut new_buffer = [0u8; 60];
 
     for (index, byte) in buffer.iter().enumerate() {
@@ -101,7 +103,7 @@ where
     }
 
     pub fn read_measurement(&mut self) -> Result<(), E> {
-        let mut rd_buffer = [0u8; 60];
+        let mut rd_buffer = [0u8; 90];
 
         self.0.write(
             DEFAULT_ADDRESS,
@@ -111,19 +113,46 @@ where
 
         let measurements = remove_crc_bits(&rd_buffer);
 
-        defmt::info!("PM1.0 {=?}", f32::from_be_bytes([
+        defmt::info!("PM1.0 {=[u8]}", rd_buffer);
+
+        let a: f32 = Ieee754::from_bits(u32::from_be_bytes([
             measurements[0],
             measurements[1],
             measurements[2],
             measurements[3],
         ]));
 
-        defmt::info!("PM2.5 {=?}", f32::from_be_bytes([
-            measurements[4],
-            measurements[5],
-            measurements[6],
-            measurements[7],
-        ]));
+        defmt::info!("PM1.0 {=?}", a);
+
+        defmt::info!(
+            "PM2.5 {=?}",
+            f32::from_be_bytes([
+                measurements[4],
+                measurements[5],
+                measurements[6],
+                measurements[7],
+            ])
+        );
+
+        defmt::info!(
+            "PM4.0 {=?}",
+            f32::from_be_bytes([
+                measurements[8],
+                measurements[9],
+                measurements[10],
+                measurements[11],
+            ])
+        );
+
+        defmt::info!(
+            "PM10 {=?}",
+            f32::from_be_bytes([
+                measurements[12],
+                measurements[13],
+                measurements[14],
+                measurements[15],
+            ])
+        );
 
         Ok(())
     }
@@ -189,7 +218,7 @@ where
 
         defmt::info!("Speed State {=?}", get_device_status(device_status, 21));
         defmt::info!("Lazer State {=?}", get_device_status(device_status, 5));
-        defmt::info!("Fan State {=?}",  get_device_status(device_status, 4));
+        defmt::info!("Fan State {=?}", get_device_status(device_status, 4));
 
         Ok(true)
     }
@@ -202,7 +231,6 @@ where
 
         Ok(())
     }
-
 
     pub fn read_firmware_version(&mut self) -> Result<[u8; 2], E> {
         let mut rd_buffer = [0u8; 3];

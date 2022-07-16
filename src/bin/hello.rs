@@ -107,6 +107,29 @@ fn main() -> ! {
     let twim_pins = twim::Pins { scl, sda };
     let i2c = Twim::new(board.TWIM0, twim_pins, twim::Frequency::K100);
 
+    let mut button_1 = dk_button::Button::new(pins_0.p0_11.degrade());
+    let mut button_2 = dk_button::Button::new(pins_0.p0_12.degrade());
+    let mut button_3 = dk_button::Button::new(pins_0.p0_24.degrade());
+    let mut button_4 = dk_button::Button::new(pins_0.p0_25.degrade());
+
+    let mut temp = Temp::new(board.TEMP);
+
+    let mut current_unit = Unit::Celsius;
+    let mut temperature;
+
+    light.white();
+    one_shot_timer.delay_ms(500_u32);
+    light.blue();
+    one_shot_timer.delay_ms(500_u32);
+    light.red();
+    one_shot_timer.delay_ms(500_u32);
+    light.green();
+
+    epd4in2.update_frame(&mut spi, &display.buffer()).unwrap();
+    epd4in2
+        .display_frame(&mut spi)
+        .expect("display frame new graphics");
+
     let mut pm_sensor = sps30::SPS30::init(i2c);
 
     one_shot_timer.delay_ms(300_u32); // delay to allow sensors to boot
@@ -131,50 +154,17 @@ fn main() -> ! {
     pm_sensor.start_measurement().unwrap();
     one_shot_timer.delay_ms(6000_u32); // delay to allow sensors to boot
 
-    pm_sensor.read_device_status().unwrap();
-
-    let data_ready = pm_sensor.data_ready().unwrap();
-    defmt::info!("Data_ready {=?}", data_ready);
-
-    pm_sensor.read_measurement().unwrap();
-
     let i2c = pm_sensor.free();
 
     let mut sensor = scd30::SCD30::init(i2c);
-
     let firmware_version = sensor.read_firmware_version().unwrap();
-
     defmt::info!(
         "Firmware Version: {=u8}.{=u8}",
         firmware_version[0],
         firmware_version[1]
     );
 
-    let temperature_offset = sensor.read_temperature_offset().unwrap();
-    defmt::info!("Temperature offset : {=u16}", temperature_offset);
-
-    let mut button_1 = dk_button::Button::new(pins_0.p0_11.degrade());
-    let mut button_2 = dk_button::Button::new(pins_0.p0_12.degrade());
-    let mut button_3 = dk_button::Button::new(pins_0.p0_24.degrade());
-    let mut button_4 = dk_button::Button::new(pins_0.p0_25.degrade());
-
-    let mut temp = Temp::new(board.TEMP);
-
-    let mut current_unit = Unit::Celsius;
-    let mut temperature;
-
-    light.white();
-    one_shot_timer.delay_ms(500_u32);
-    light.blue();
-    one_shot_timer.delay_ms(500_u32);
-    light.red();
-    one_shot_timer.delay_ms(500_u32);
-    light.green();
-
-    epd4in2.update_frame(&mut spi, &display.buffer()).unwrap();
-    epd4in2
-        .display_frame(&mut spi)
-        .expect("display frame new graphics");
+    let mut i2c = sensor.free();
 
     let mut update_counter: i32 = 0;
     let mut last_co2_update_counter: i32 = 0;
@@ -186,6 +176,8 @@ fn main() -> ! {
         periodic_timer.start(1000u32);
 
         if (millis % 5000) == 0 {
+            let mut sensor = scd30::SCD30::init(i2c);
+
             defmt::info!("Tick (milliseconds): {=u64}", millis);
             temperature = temp.measure().to_num();
             let converted_temp = current_unit.convert_temperature(&temperature);
@@ -229,6 +221,18 @@ fn main() -> ! {
             } else {
                 defmt::info!("Sensor Data Not Ready.");
             }
+
+            i2c = sensor.free();
+
+            let mut pm_sensor = sps30::SPS30::init(i2c);
+            pm_sensor.clear_device_status().unwrap();
+            one_shot_timer.delay_ms(50_u32);
+            pm_sensor.read_device_status().unwrap();
+            let data_ready = pm_sensor.data_ready().unwrap();
+            defmt::info!("Data_ready {=?}", data_ready);
+            pm_sensor.read_measurement().unwrap();
+
+            i2c = pm_sensor.free();
         };
 
         if (millis % 30000) == 0 {
@@ -274,6 +278,8 @@ fn main() -> ! {
         }
 
         if (millis % 5) == 0 {
+            let mut sensor = scd30::SCD30::init(i2c);
+
             if button_1.check_rising_edge() {
                 current_unit = match current_unit {
                     Unit::Fahrenheit => Unit::Kelvin,
@@ -323,6 +329,8 @@ fn main() -> ! {
 
                 light.blink(&mut one_shot_timer);
             }
+
+            i2c = sensor.free();
         }
 
         block!(periodic_timer.wait()).unwrap();

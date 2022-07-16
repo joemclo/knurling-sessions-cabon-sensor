@@ -21,6 +21,7 @@ crc_all = "0.2.0"
 epd-waveshare = "0.4.0"
 embedded-graphics = "0.6.2"
 arrayvec = {version = "0.5.2", default-features = false}
+ieee754 = "0.2"
 
 [features]
 # set logging levels here
